@@ -2,7 +2,7 @@
 
 A single-file, fully offline tool for finding the path to any field in a JSON document. Paste JSON on the left, click a node on the right, and copy its path in the notation you need. Named for the breadcrumb trail it leaves to any value — built to stay fast on large, deeply nested payloads and to keep sensitive data on your own machine.
 
-> Inspired by [jsonpathfinder.com](https://jsonpathfinder.com) ([source](https://github.com/joebeachjoebeach/json-path-finder)). This is an independent, offline rebuild with extra features.
+
 
 ## Why
 
