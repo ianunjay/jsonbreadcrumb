@@ -1,81 +1,108 @@
 # 🍞 JSONbreadCrumb
 
-A single-file, fully offline tool for finding the path to any field in a JSON document. Paste JSON on the left, click a node on the right, and copy its path in the notation you need. Built to stay fast on **very large, deeply nested payloads** and to keep sensitive data on your own machine.
+**A local-first JSON path finder for large, sensitive JSON files.**
 
-> Inspired by [jsonpathfinder.com](https://jsonpathfinder.com) ([source](https://github.com/joebeachjoebeach/json-path-finder)). Independent, offline rebuild with a virtualized editor for large files.
+[Try JSONbreadCrumb](https://ianunjay.github.io/jsonbreadcrumb/) · [View the PRD](./docs/JSONbreadCrumb-PRD.md) 
 
-## Why
+---
 
-The hosted tools run in someone else's browser session. When you work with internal or sensitive JSON, you don't want to paste it into a site. JSONbreadCrumb runs entirely client-side from one HTML file — nothing leaves your machine — and it doesn't hang on multi-megabyte files.
+## Problem
 
-## Performance (measured, headless Chrome 145)
+I needed to inspect a JSON file with ~90,000 lines. VS Code could open it, but finding the path to a deeply nested value was painful. Once I found the value I needed, I still had to trace it back through every key and array index to construct the path. 
+I normally used JSONPathFinder for this, but I had two problems with it. I didn't want to paste sensitive JSON into a hosted tool, and it was slow on the large files I actually needed to inspect. The second problem was a dealbreake. 
 
-On a **2.22 MB / 80,000-line** JSON file:
+So I decided to build a local-first version that solved both problems.
 
-| Metric | Old (textarea + full overlay) | JSONbreadCrumb 1.2 |
-|---|---|---|
-| Load + parse + first render | ~5,600 ms | **~290 ms** (≈19× faster) |
-| Scroll frame cost | 40–60 ms (janky) | **~24 ms** (near 60fps) |
-| Left-panel DOM nodes | ~108,000 | **~370** |
+## My initial build
 
-## How it stays fast
+The initial product definition was fairly simple. I wanted to open large JSON files locally, click a value and get its exact path, copy that path in the notation I needed, and search the JSON without sending any of it outside my machine. I also wanted the product to stay small enough that I could actually maintain it. I wasn't trying to build another JSON IDE. I wanted a tool that solved a very specific problem well.
 
-- **Virtualized editor.** For large files the left panel renders only the ~60 lines
-  in view (not the whole document), positioned with a CSS transform. Scroll cost is
-  proportional to the screen, not the file. Small files keep a normal editable textarea.
-- **Big pastes bypass the textarea** so a multi-MB blob never hits the slow native path.
-- **Lazy tree** on the right builds child rows only when you expand a node; starts collapsed.
-- **Indexed search.** The tree search flattens the JSON once, then each keystroke is a
-  linear scan. Find-in-editor tokenizes once and only decorates visible lines.
+That meant the real constraint was not just "make it work on large files." It was "make the things I actually need work on large files without building a much larger product than I need."
 
-## Features
+## First version
 
-- Interactive JSON tree — click any node to get its path.
-- Four path notations with one-click copy: `x.notation`, `JSONPath`, `Bracket`, RFC 6901 `Pointer`.
-- Two independent searches: tree search (right, clickable results that jump) and find-in-raw-JSON (left, highlight + next/previous).
-- Double-click any value in the raw JSON to jump to that node in the tree.
-- Editable path field — type a path in any notation and press Enter to jump.
-- Line numbers, gutter code-folding, beautify/minify, upload, drag-and-drop.
-- Rows / Code tree views, optional type labels, expand/collapse all, keyboard nav.
-- Light/dark themes, remembered and instant.
+I used AI-assisted development to build the first version. It solved the privacy problem. The data stayed local. It also choked on the large files I actually needed it for. My first attempt to fix that was, in retrospect, not particularly sophisticated:
 
-## Usage
+> "make loading & search faster"
 
-No build, no dependencies, no server. Open `index.html` in any modern browser. Paste JSON, click **Sample**, **Upload**, or drag a `.json` file in. Click a node on the right for its path; click **Copy**.
+That was the entire prompt. Of course, it didn't work. I took a shot witout deep diving into it. So instead of continuing to ask AI to make it faster, I dug into the implementation to understand what was actually happening.
 
-For large files the left panel becomes a fast read-only viewer (badge: "large file · fast viewer"). Editing is for normal-sized inputs — you don't hand-edit an 80k-line file.
+## Reframe
 
-### Serve locally (optional)
+I found that the application was rendering the entire JSON document at once.My screen could show roughly 60 lines. The file had around 90,000. The browser was doing a huge amount of work to render content I didn't even need and couldn't even see. That changed how I thought about the problem. I needed to stop asking it to render 90,000 lines at once in the first place and do it in chunks. I counted the number of lines that I could see on my monitor at once. 
 
-```bash
-python3 tools/serve.py     # http://localhost:8000
-```
+The solution was to virtualize the large-file viewer and render only the content visible in the viewport. That became the main performance decision behind the rebuild. I also realized that large files and normal files did not need exactly the same experience. A normal-sized JSON file can remain editable, but when I am looking at 80,000 lines, I care much more about being able to search and navigate quickly than I do about editing the document.
+So large files became a fast, read-only viewer.
 
-## Keyboard shortcuts
+## Product decisions
 
-| Shortcut | Action |
-|---|---|
-| `Ctrl/⌘ + F` | Find in raw JSON (left) |
-| `Enter` / `Shift+Enter` | Next / previous find match |
-| `Esc` | Close find |
-| Arrow keys (tree focused) | Move / expand / collapse |
-| Double-click (in editor/viewer) | Jump to that node in the tree |
+Once I understood the actual problem, I went back to the requirements and separated what I needed from what would merely be nice to have. I chose an interactive JSON tree, multiple path formats, separate searches for the tree and raw JSON, client-side processing, a single-file deployment, and custom virtualization for large files.
 
-## Project structure
+I deliberately did not build a full editor for 90,000-line files, a cloud version, server-side processing, or a large editor framework just because it was available. I also avoided turning search into one clever unified interface when two simpler search experiences made more sense. Some of these choices were technically harder than the alternatives. Others meant giving up features I could have built. I was willing to make those tradeoffs because the goal was to solve the actual workflow, and not maximize the feature count.
 
-```
-jsonbreadcrumb/
-├── index.html            # the entire app
-├── README.md · LICENSE · CHANGELOG.md · .gitignore
-├── docs/case-study.md
-└── tools/  check.py · serve.py · README.md
-```
 
-## Acknowledgements
+## Product Requirement Document
 
-- Concept and UI inspired by **JSON Path Finder** by Joe Beach (MIT).
-- Implementation written with an AI coding assistant; product direction, profiling, and QA by the repo owner. Performance verified by driving headless Chromium. See `docs/case-study.md`.
+Once the problem, requirements, and tradeoffs were clear, I turned them into a PRD.
+It covers the product goals and non-goals, target users, functional requirements, privacy and performance requirements, acceptance criteria, and the decisions that shaped the implementation.
+
+[**Read the full PRD →**](./docs/JSONbreadCrumb-PRD.md)
+
+## Measuring the result
+
+The final version felt blazingly fast. So I wanted to put numbers to it, and get some metrics. 
+
+I defined performance measurements and compared the initial implementation with the final version using the same large JSON file and browser environment. The test file was approximately **2.22 MB and 80,000 lines**.
+
+| Metric | First version | Final version |
+|---|---:|---:|
+| Load + parse + first render | ~5,600 ms | **~290 ms** |
+| Scroll step | 40–60 ms | **~24 ms** |
+| Editor DOM nodes | ~108,000 | **~370** |
+
+The initial load and first render improved by approximately **19x**.
+
+**5.6 seconds → 290 milliseconds.**
+
+The reduction in DOM size was significant too. Instead of maintaining roughly 108,000 editor elements, the final version maintained around 370. The performance measurements were run using headless Chromium with the same test file and comparison methodology. 
+
+## What I built
+
+The final product supports interactive JSON tree navigation, four path formats (dot notation, JSONPath, bracket notation, and JSON Pointer), one-click path copying, tree search, raw JSON search, and navigation between the raw JSON and tree representations. 
+It also includes large-file virtualization, lazy tree rendering, line numbers, code folding, beautify and minify, file upload and drag-and-drop, and light and dark themes.
+
+For large files, the editor becomes a fast, read-only viewer rather than trying to provide a full editing experience.
+
+## My role
+
+The implementation was built using AI-assisted coding. I am not presenting the code as my engineering work. 
+My focus was the product: identifying the problem, defining the objective and constraints, framing the requirements, investigating why the first version failed, reframing the performance problem, deciding what to build and what not to build, making the scope tradeoffs, writing the PRD, defining the performance requirements, and validating the result against those requirements.
+
+What interested me about this project was what happens when building becomes cheap.
+
+The code can be generated quickly. That does not remove the need to decide what should exist in the first place, what is worth building, what should be left out, and how to tell whether the thing you built actually solved the problem.
+
+Those are the decisions I wanted this project to demonstrate.
+
+## Product artifacts
+
+The repository includes the product work behind the implementation:
+
+- [**PRD**](./docs/JSONbreadCrumb-PRD.md): product requirements, goals, non-goals, and acceptance criteria.
+- [**Performance Validation**](./docs/performance.md): the measurements and methodology used to compare the first and final versions.
+
+The code is here because there needs to be a real product to evaluate the decisions against.
+
+## Try it
+
+[**Open JSONbreadCrumb →**](https://ianunjay.github.io/jsonbreadcrumb/)
+
+No installation, account, or server required. JSONbreadCrumb runs entirely in the browser, so your JSON stays on your machine.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+The implementation is MIT licensed.
+
+## Acknowledgement
+
+JSONbreadCrumb was inspired by [JSON Path Finder](https://jsonpathfinder.com/) by Joe Beach. This is an independent, offline rebuild designed around local processing and large-file performance.
